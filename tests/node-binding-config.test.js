@@ -9,11 +9,12 @@
 // jest mock wired in package.json (`moduleNameMapper`), so no `.node`
 // binary is loaded.
 
+import { persistentConfig } from './persistent-config.js'
 import { NodeRgbLightningBinding } from '../src/node-binding.js'
 
 describe('NodeRgbLightningBinding._initRequest', () => {
   it('applies defaults and omits opt-in fields for a minimal config', () => {
-    const binding = new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/data' })
+    const binding = new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/data' }))
     expect(binding._initRequest).toEqual({
       storage_dir_path: '/data',
       daemon_listening_port: 0,
@@ -30,14 +31,14 @@ describe('NodeRgbLightningBinding._initRequest', () => {
   })
 
   it('forwards explicit ports, media size and virtual-channels flag', () => {
-    const binding = new NodeRgbLightningBinding({
-      network: 'testnet',
+    const binding = new NodeRgbLightningBinding(persistentConfig({
+      network: 'regtest',
       dataDir: '/d',
       daemonListeningPort: 3001,
       ldkPeerListeningPort: 9735,
       maxMediaUploadSizeMb: 10,
       enableVirtualChannelsV0: true
-    })
+    }))
     expect(binding._initRequest).toMatchObject({
       daemon_listening_port: 3001,
       ldk_peer_listening_port: 9735,
@@ -47,15 +48,15 @@ describe('NodeRgbLightningBinding._initRequest', () => {
   })
 
   it('forwards virtual_peer_pubkeys only when the list is non-empty', () => {
-    const empty = new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/d', virtualPeerPubkeys: [] })
+    const empty = new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/d', virtualPeerPubkeys: [] }))
     expect(empty._initRequest).not.toHaveProperty('virtual_peer_pubkeys')
 
-    const withPeers = new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/d', virtualPeerPubkeys: ['02abc'] })
+    const withPeers = new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/d', virtualPeerPubkeys: ['02abc'] }))
     expect(withPeers._initRequest.virtual_peer_pubkeys).toEqual(['02abc'])
   })
 
   it('forwards VSS and LSP fields only when opted in', () => {
-    const binding = new NodeRgbLightningBinding({
+    const binding = new NodeRgbLightningBinding(persistentConfig({
       network: 'regtest',
       dataDir: '/d',
       vssUrl: 'https://vss.example',
@@ -63,7 +64,7 @@ describe('NodeRgbLightningBinding._initRequest', () => {
       vssAllowEmptyRestore: true,
       lspBaseUrl: 'https://lsp.example',
       lspBearerToken: 'tok'
-    })
+    }))
     expect(binding._initRequest).toMatchObject({
       vss_url: 'https://vss.example',
       vss_allow_http: true,
@@ -74,10 +75,10 @@ describe('NodeRgbLightningBinding._initRequest', () => {
   })
 
   it('vssStatus reflects the constructed config without a server round-trip', () => {
-    const off = new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/d' })
+    const off = new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/d' }))
     expect(off.vssStatus()).toEqual({ configured: false, url: null, allowHttp: false, lastBackupVersion: null })
 
-    const on = new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/d', vssUrl: 'https://vss.example', vssAllowHttp: true })
+    const on = new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/d', vssUrl: 'https://vss.example', vssAllowHttp: true }))
     expect(on.vssStatus()).toEqual({
       configured: true,
       url: 'https://vss.example',

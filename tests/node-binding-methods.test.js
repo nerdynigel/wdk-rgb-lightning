@@ -11,12 +11,13 @@
 // constructor request-mapping + vssStatus are covered separately in
 // node-binding-config.test.js and are not re-tested here.
 
+import { persistentConfig } from './persistent-config.js'
 import { jest } from '@jest/globals'
 import rln from '@utexo/rgb-lightning-node-nodejs'
 import { NodeRgbLightningBinding } from '../src/node-binding.js'
 
 function makeBinding (overrides = {}) {
-  return new NodeRgbLightningBinding({ network: 'regtest', dataDir: '/d', ...overrides })
+  return new NodeRgbLightningBinding(persistentConfig({ network: 'regtest', dataDir: '/d', ...overrides }))
 }
 
 // Representative native AsyncOrderNewResponse used to verify that apayNew
@@ -98,14 +99,14 @@ describe('attachExternalSigner', () => {
   })
 
   it('records an optional legacy fallback seed without constructing it eagerly', () => {
-    const spy = jest.spyOn(rln.NativeExternalSigner, 'create')
+    const spy = jest.spyOn(rln.NativeExternalSigner, 'createWithStorage')
       .mockReturnValue({ bootstrap: jest.fn(), destroy: jest.fn() })
     try {
       const b = makeBinding()
       b.attachExternalSigner('seed-v2', 'seed-v1')
       expect(b._fallbackSeedHex.toString()).toBe('seed-v1')
       expect(spy).toHaveBeenCalledTimes(1)
-      expect(spy).toHaveBeenCalledWith('seed-v2', 'regtest', true)
+      expect(spy).toHaveBeenCalledWith('seed-v2', 'regtest', b._config.signerStorage.path, false)
     } finally {
       spy.mockRestore()
     }
@@ -113,12 +114,12 @@ describe('attachExternalSigner', () => {
 
   it('passes the seed, configured network and permissive-policy default to NativeExternalSigner.create', () => {
     const created = { bootstrap: jest.fn(), destroy: jest.fn() }
-    const spy = jest.spyOn(rln.NativeExternalSigner, 'create').mockReturnValue(created)
+    const spy = jest.spyOn(rln.NativeExternalSigner, 'createWithStorage').mockReturnValue(created)
     try {
       const b = makeBinding()
       b.attachExternalSigner('seed-a')
       expect(spy).toHaveBeenCalledTimes(1)
-      expect(spy).toHaveBeenCalledWith('seed-a', 'regtest', true)
+      expect(spy).toHaveBeenCalledWith('seed-a', 'regtest', b._config.signerStorage.path, false)
       expect(b._signer).toBe(created)
     } finally {
       spy.mockRestore()
@@ -127,12 +128,12 @@ describe('attachExternalSigner', () => {
 
   // An explicit false value must not be replaced by the default.
   it('forwards an explicit permissiveSignerPolicy=false instead of the default', () => {
-    const spy = jest.spyOn(rln.NativeExternalSigner, 'create')
+    const spy = jest.spyOn(rln.NativeExternalSigner, 'createWithStorage')
       .mockReturnValue({ bootstrap: jest.fn(), destroy: jest.fn() })
     try {
       const b = makeBinding({ permissiveSignerPolicy: false })
       b.attachExternalSigner('seed-a')
-      expect(spy).toHaveBeenCalledWith('seed-a', 'regtest', false)
+      expect(spy).toHaveBeenCalledWith('seed-a', 'regtest', b._config.signerStorage.path, false)
     } finally {
       spy.mockRestore()
     }
@@ -233,99 +234,26 @@ describe('unlock', () => {
     expect(node.unlockWithNativeExternalSigner).toHaveBeenCalledTimes(2)
   })
 
-  it('retries with the legacy signer only for a persisted identity mismatch', () => {
-    const b = makeBinding()
-    const node = fakeNode()
-    const primarySigner = fakeSigner()
-    const fallbackSigner = fakeSigner()
-    node.unlockWithNativeExternalSigner
-      .mockImplementationOnce(() => {
-        throw new Error('Rln(ExternalSignerMismatch): External signer identity does not match persisted node identity')
-      })
-      .mockImplementationOnce(() => undefined)
-    const createSpy = jest.spyOn(rln.NativeExternalSigner, 'create').mockReturnValue(fallbackSigner)
-    b._node = node
-    b._signer = primarySigner
-    const primarySeed = Buffer.from('seed-v2')
-    const fallbackSeed = Buffer.from('seed-v1')
-    b._seedHex = primarySeed
-    b._fallbackSeedHex = fallbackSeed
-    try {
-      expect(() => b.unlock({ rpc: true })).not.toThrow()
-      expect(primarySigner.destroy).toHaveBeenCalledTimes(1)
-      expect(createSpy).toHaveBeenCalledWith('seed-v1', 'regtest', true)
-      expect(node.unlockWithNativeExternalSigner).toHaveBeenLastCalledWith(fallbackSigner, { rpc: true })
-      expect(b._seedHex).toBe(fallbackSeed)
-      expect(b._seedHex.toString()).toBe('seed-v1')
-      expect(primarySeed.every((byte) => byte === 0)).toBe(true)
-      expect(b._fallbackSeedHex).toBeUndefined()
-    } finally {
-      createSpy.mockRestore()
-    }
-  })
-
-  it('destroys a newly created fallback signer when the primary signer cannot be released', () => {
-    const b = makeBinding()
-    const node = fakeNode()
-    const primarySigner = fakeSigner()
-    const fallbackSigner = fakeSigner()
-    const destroyError = new Error('primary signer destroy failed')
-    primarySigner.destroy.mockImplementation(() => { throw destroyError })
-    node.unlockWithNativeExternalSigner.mockImplementation(() => {
-      throw new Error('Rln(ExternalSignerMismatch): External signer identity does not match persisted node identity')
-    })
-    const createSpy = jest.spyOn(rln.NativeExternalSigner, 'create').mockReturnValue(fallbackSigner)
-    const primarySeed = Buffer.from('seed-v2')
-    const fallbackSeed = Buffer.from('seed-v1')
-    b._node = node
-    b._signer = primarySigner
-    b._seedHex = primarySeed
-    b._fallbackSeedHex = fallbackSeed
-    try {
-      expect(() => b.unlock({})).toThrow(destroyError)
-      expect(fallbackSigner.destroy).toHaveBeenCalledTimes(1)
-      expect(b._signer).toBe(primarySigner)
-      expect(b._seedHex).toBe(primarySeed)
-      expect(b._fallbackSeedHex).toBe(fallbackSeed)
-      expect(node.unlockWithNativeExternalSigner).toHaveBeenCalledTimes(1)
-    } finally {
-      createSpy.mockRestore()
-    }
-  })
-
-  it('reports both native cleanup failures during fallback replacement', () => {
-    const b = makeBinding()
-    const node = fakeNode()
-    const primarySigner = fakeSigner()
-    const fallbackSigner = fakeSigner()
-    const primaryError = new Error('primary signer destroy failed')
-    const fallbackError = new Error('fallback signer destroy failed')
-    primarySigner.destroy.mockImplementation(() => { throw primaryError })
-    fallbackSigner.destroy.mockImplementation(() => { throw fallbackError })
-    node.unlockWithNativeExternalSigner.mockImplementation(() => {
-      throw new Error('Rln(ExternalSignerMismatch): External signer identity does not match persisted node identity')
-    })
-    const createSpy = jest.spyOn(rln.NativeExternalSigner, 'create').mockReturnValue(fallbackSigner)
-    b._node = node
-    b._signer = primarySigner
-    b._seedHex = Buffer.from('seed-v2')
-    b._fallbackSeedHex = Buffer.from('seed-v1')
-    try {
-      let thrown
+  for (const cleanupFails of [false, true]) {
+    it(`rejects identity mismatch without replacing persistent signer (cleanup failure ${cleanupFails})`, () => {
+      const b = makeBinding()
+      const node = fakeNode()
+      const signer = fakeSigner()
+      if (cleanupFails) signer.destroy.mockImplementation(() => { throw new Error('cleanup failed') })
+      node.unlockWithNativeExternalSigner.mockImplementation(() => { throw new Error('ExternalSignerMismatch') })
+      const spy = jest.spyOn(rln.NativeExternalSigner, 'createWithStorage')
+      b._node = node
+      b._signer = signer
+      b._fallbackSeedHex = Buffer.from('legacy-test-seed')
       try {
-        b.unlock({})
-      } catch (error) {
-        thrown = error
-      }
-      expect(thrown).toBeInstanceOf(AggregateError)
-      expect(thrown.message).toBe('unlock: failed to destroy both the primary and fallback signers')
-      expect(thrown.errors).toEqual([primaryError, fallbackError])
-      expect(fallbackSigner.destroy).toHaveBeenCalledTimes(1)
-      expect(b._signer).toBe(primarySigner)
-    } finally {
-      createSpy.mockRestore()
-    }
-  })
+        expect(() => b.unlock({})).toThrow()
+        expect(spy).not.toHaveBeenCalled()
+        expect(signer.destroy).not.toHaveBeenCalled()
+        expect(node.unlockWithNativeExternalSigner).toHaveBeenCalledTimes(1)
+        expect(b._signer).toBe(signer)
+      } finally { spy.mockRestore(); b._fallbackSeedHex.fill(0) }
+    })
+  }
 
   it('does not retry a generic unlock failure with the legacy signer', () => {
     const b = makeBinding()

@@ -16,6 +16,7 @@ const SdkNode = {
 }
 
 const NativeExternalSigner = {
+  createWithStorage: () => ({ bootstrap: () => ({}), destroy: () => {} }),
   create: () => ({
     bootstrap: () => ({}),
     destroy: () => {}

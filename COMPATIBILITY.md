@@ -55,3 +55,12 @@ an approval. These capabilities remain absent; there is no JS substitute here.
 See the recovery/approval contracts in BTCX commit b6c4081 under
 `docs/UPSTREAM/patches/upstream-resolution/`. Those pending tests are not claimed
 as passing. No funded testing or application adoption is authorized by these fixes.
+
+## Test migration
+
+The Node unit fixtures now allocate explicit private signer storage and select
+strict regtest. Legacy automatic identity-fallback success tests are replaced
+with mismatch rejection tests, including a signer whose cleanup would fail:
+no replacement signer may be constructed. The former testnet config-mapping
+fixture uses regtest because this branch deliberately rejects other networks.
+Real persistence tests remain separate from these mocked request-mapping tests.

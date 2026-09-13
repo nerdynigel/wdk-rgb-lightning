@@ -50,7 +50,8 @@
     "cross-env": "7.0.3",
     "jest": "29.7.0",
     "standard": "17.1.2",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "@utexo/rgb-lightning-node-nodejs": "git+https://github.com/nerdynigel/rgb-lightning-node-nodejs.git#943991cd79e7ca154084694ea217a7edb5c78fdc"
   },
   "jest": {
     "setupFilesAfterEnv": [

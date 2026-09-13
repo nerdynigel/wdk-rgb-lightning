@@ -185,7 +185,6 @@ export default class WalletManagerRgbLightning extends WalletManager {
         } finally { this._binding = null }
         throw error
       }
-
     }
     return this._accounts[index]
   }
@@ -226,8 +225,7 @@ export default class WalletManagerRgbLightning extends WalletManager {
     const failures = []
     // Base account getters still require the native bootstrap at this point.
     try { super.dispose() } catch (error) { failures.push(error) }
-    try { this._binding?.shutdown() } catch (error) { failures.push(error) }
-    finally { this._binding = null }
+    try { this._binding?.shutdown() } catch (error) { failures.push(error) } finally { this._binding = null }
     if (failures.length) throw new AggregateError(failures, 'RGB Lightning cleanup failed')
   }
 }
