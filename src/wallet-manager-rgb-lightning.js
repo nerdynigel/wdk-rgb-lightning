@@ -111,6 +111,7 @@ export default class WalletManagerRgbLightning extends WalletManager {
     /** @private */ this._network = config.network
     /** @private @type {IRgbLightningBinding | null} */
     this._binding = null
+    this._disposed = false
   }
 
   /**
@@ -125,6 +126,7 @@ export default class WalletManagerRgbLightning extends WalletManager {
    * @returns {Promise<WalletAccountRgbLightning>}
    */
   async getAccount (indexOrSignerName = 0, options = {}) {
+    if (this._disposed) throw new Error('Wallet manager is disposed')
     if (typeof indexOrSignerName === 'string' || options.signerName !== undefined) {
       throw new Error(
         'RGB Lightning accounts require the manager seed; registered WDK signers are not supported.'
@@ -159,22 +161,30 @@ export default class WalletManagerRgbLightning extends WalletManager {
       // RN-side `unlock()` call then brings LDK + bitcoind online
       // using the bootstrap that's already on disk (or writes it if
       // this is a fresh dataDir).
-      const currentSeedHex = wdkSeedToNodeSeedHex(this.seed)
-      const legacySeedHex = legacyWdkSeedToNodeSeedHex(this.seed)
-      const derivation = this._config.nodeSeedDerivation ?? 'auto'
-      if (!['auto', 'wdk-seed-v2', 'legacy-v1'].includes(derivation)) {
-        throw new Error("nodeSeedDerivation must be 'auto', 'wdk-seed-v2', or 'legacy-v1'")
-      }
-      if (derivation === 'legacy-v1') {
-        binding.attachExternalSigner(legacySeedHex)
-      } else {
-        binding.attachExternalSigner(
-          currentSeedHex,
-          derivation === 'auto' && legacySeedHex !== currentSeedHex ? legacySeedHex : undefined
-        )
+      try {
+        const currentSeedHex = wdkSeedToNodeSeedHex(this.seed)
+        const legacySeedHex = legacyWdkSeedToNodeSeedHex(this.seed)
+        const derivation = this._config.nodeSeedDerivation ?? 'auto'
+        if (!['auto', 'wdk-seed-v2', 'legacy-v1'].includes(derivation)) {
+          throw new Error("nodeSeedDerivation must be 'auto', 'wdk-seed-v2', or 'legacy-v1'")
+        }
+        if (derivation === 'legacy-v1') {
+          binding.attachExternalSigner(legacySeedHex)
+        } else {
+          binding.attachExternalSigner(
+            currentSeedHex,
+            derivation === 'auto' && legacySeedHex !== currentSeedHex ? legacySeedHex : undefined
+          )
+        }
+
+        this._accounts[index] = new WalletAccountRgbLightning({ binding })
+      } catch (error) {
+        try { binding.shutdown() } catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], 'Wallet initialization cleanup failed')
+        } finally { this._binding = null }
+        throw error
       }
 
-      this._accounts[index] = new WalletAccountRgbLightning({ binding })
     }
     return this._accounts[index]
   }
@@ -210,10 +220,13 @@ export default class WalletManagerRgbLightning extends WalletManager {
   }
 
   dispose () {
-    if (this._binding) {
-      this._binding.shutdown()
-      this._binding = null
-    }
-    super.dispose()
+    if (this._disposed) return
+    this._disposed = true
+    const failures = []
+    // Base account getters still require the native bootstrap at this point.
+    try { super.dispose() } catch (error) { failures.push(error) }
+    try { this._binding?.shutdown() } catch (error) { failures.push(error) }
+    finally { this._binding = null }
+    if (failures.length) throw new AggregateError(failures, 'RGB Lightning cleanup failed')
   }
 }
