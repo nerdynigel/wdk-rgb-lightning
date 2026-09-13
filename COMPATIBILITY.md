@@ -25,10 +25,10 @@ Preserve the upstream licence.
 ## Exact dependency pins and remaining gates
 
 WDK base: `4883283fb00a98db0251d5697a9eaa6edb870bb9` (beta.15).
-Base wallet cleanup requires `nerdynigel/wdk-wallet@e6b0bad6e65225ca7175271e34b59928051a70f6`
+Base wallet cleanup requires `nerdynigel/wdk-wallet@aa6ff24ca3bbf4f5c347e9d919479e4df89d1cdc`
 (beta.14 base); its independent seed/signer cleanup cannot correctly be copied
 into this module. The separate fork carries only that already-reviewed fix.
-Node binding: `nerdynigel/rgb-lightning-node-nodejs@fb581ad7ec7014f5b64a3051a2ef1d8c7907ac74`
+Node binding: `nerdynigel/rgb-lightning-node-nodejs@943991cd79e7ca154084694ea217a7edb5c78fdc`
 (beta.16 base `d7cadef35406bffa6bec83a50ceda2f0bb9eaebd`). Install that
 exact source as the optional Node peer when exercising exact swap methods.
 No Bare/mobile compatibility claim is made. Node 24 is required for lossless JSON.
