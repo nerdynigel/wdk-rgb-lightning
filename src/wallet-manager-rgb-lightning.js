@@ -142,6 +142,7 @@ export default class WalletManagerRgbLightning extends WalletManager {
       const binding = new Binding({
         network: this._network,
         dataDir: this._config.dataDir,
+        signerStorage: this._config.signerStorage,
         daemonListeningPort: this._config.daemonListeningPort,
         ldkPeerListeningPort: this._config.ldkPeerListeningPort,
         maxMediaUploadSizeMb: this._config.maxMediaUploadSizeMb,

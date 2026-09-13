@@ -10,8 +10,11 @@
 // lockstep with `bare-binding.js` so the WDK layer is identical across
 // runtimes — see binding-interface.js for the contract.
 
+import { lstatSync, realpathSync, readdirSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
+
 import rln from '@utexo/rgb-lightning-node-nodejs'
-import { retainSecret, revealSecret, secretMatches, wipeSecret } from './secret-buffer.js'
+import { retainSecret, secretMatches, wipeSecret } from './secret-buffer.js'
 
 const {
   SdkNode,
@@ -48,6 +51,45 @@ export class NodeRgbLightningBinding {
    *   configuration.
    */
   constructor (config) {
+    const storage = config.signerStorage
+    if (config.network !== 'regtest' || config.permissiveSignerPolicy !== false) {
+      throw new Error('Persistent signer candidate requires explicit strict regtest policy')
+    }
+    if (!storage || !isAbsolute(storage.path) ||
+        !['create', 'resume'].includes(storage.mode)) {
+      throw new Error('Explicit absolute signerStorage path and create/resume mode required')
+    }
+    // The host owns this dedicated, existing directory. Never delete it on disposal.
+    const stat = lstatSync(storage.path)
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0 ||
+        realpathSync(storage.path) !== storage.path) {
+      throw new Error('Signer storage must be a canonical owner-only directory')
+    }
+    let databaseExists = false
+    for (const name of ['redb', 'redb.db2']) {
+      try {
+        const file = lstatSync(join(storage.path, name))
+        if (!file.isFile() || file.isSymbolicLink() || file.size === 0) {
+          throw new Error('Invalid signer database')
+        }
+        databaseExists = true
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+    }
+    if ((storage.mode === 'resume') !== databaseExists) {
+      throw new Error('Signer storage mode does not match existing durable state')
+    }
+    if (storage.mode === 'create') {
+      if (readdirSync(storage.path).length !== 0) throw new Error('New signer directory must be empty')
+      try {
+        if (readdirSync(config.dataDir).length !== 0) {
+          throw new Error('Cannot create a fresh signer for existing node state')
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+    }
     this._config = config
     this._initRequest = {
       storage_dir_path: config.dataDir,
@@ -126,10 +168,11 @@ export class NodeRgbLightningBinding {
       }
       return
     }
-    this._signer = NativeExternalSigner.create(
+    this._signer = NativeExternalSigner.createWithStorage(
       seedHex,
       this._config.network,
-      this._config.permissiveSignerPolicy ?? true
+      this._config.signerStorage.path,
+      false
     )
     wipeSecret(this._seedHex)
     wipeSecret(this._fallbackSeedHex)
@@ -171,30 +214,9 @@ export class NodeRgbLightningBinding {
         throw error
       }
 
-      const fallbackSeed = this._fallbackSeedHex
-      const fallbackSigner = NativeExternalSigner.create(
-        revealSecret(fallbackSeed),
-        this._config.network,
-        this._config.permissiveSignerPolicy ?? true
-      )
-      try {
-        this._signer.destroy()
-      } catch (primaryDestroyError) {
-        try {
-          fallbackSigner.destroy()
-        } catch (fallbackDestroyError) {
-          throw new AggregateError(
-            [primaryDestroyError, fallbackDestroyError],
-            'unlock: failed to destroy both the primary and fallback signers'
-          )
-        }
-        throw primaryDestroyError
-      }
-      this._signer = fallbackSigner
-      wipeSecret(this._seedHex)
-      this._seedHex = fallbackSeed
-      this._fallbackSeedHex = undefined
-      node.unlockWithNativeExternalSigner(this._signer, unlockRequest)
+      // Never auto-migrate identity or instantiate a second signer over this store.
+      // Recovery must select the coordinated identity/state explicitly.
+      throw new Error('Persistent signer identity mismatch; coordinated recovery required', { cause: error })
     }
   }
 

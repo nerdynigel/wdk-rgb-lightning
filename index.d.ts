@@ -193,6 +193,8 @@ export interface RgbLightningBindingConfig {
   network: Network
   /** Persistent, app-private path for RLN's SQLite + LDK state. */
   dataDir: string
+  /** Isolated Node regtest candidate: wallet-owned durable signer directory. */
+  signerStorage: { path: string; mode: 'create' | 'resume' }
   daemonListeningPort?: number
   ldkPeerListeningPort?: number
   maxMediaUploadSizeMb?: number

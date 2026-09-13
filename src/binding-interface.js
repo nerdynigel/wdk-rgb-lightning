@@ -15,6 +15,8 @@
  * @typedef {Object} RgbLightningBindingConfig
  * @property {'mainnet'|'testnet'|'regtest'|'signet'} network - Bitcoin
  *   network used by the RGB Lightning node.
+ * @property {{path: string, mode: 'create'|'resume'}} signerStorage - Explicit
+ *   wallet-owned durable signer directory for the isolated Node candidate.
  * @property {string} dataDir - Persistent, app-private path for the node's
  *   SQLite database and LDK state.
  * @property {number} [daemonListeningPort] - RGB Lightning daemon port.
