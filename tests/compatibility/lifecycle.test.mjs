@@ -78,4 +78,3 @@ for (const scenario of [
     seed.fill(0);
   });
 }
-
