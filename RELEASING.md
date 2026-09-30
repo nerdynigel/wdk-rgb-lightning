@@ -53,7 +53,9 @@ git tag -a v0.1.0-beta.15 origin/main -m "Release v0.1.0-beta.15"
 git push origin v0.1.0-beta.15
 ```
 
-The tag-triggered `Release` workflow:
+GitHub Actions is opt-in only: pushing the tag no longer starts a run. Manually
+dispatch the `Release` workflow with `phase: stage` and the exact tag
+(for example, `v0.1.0-beta.15`). The `stage` job:
 
 1. Requires the tag to match `package.json` and point to the current `main`.
 2. Runs lint, type checking, coverage, production dependency audit,
@@ -69,8 +71,8 @@ until the staged npm package is approved and publicly verifiable.
 Review the staged package on npm, including its files, version, tag, and
 integrity. Approve it with 2FA.
 
-After the package is public, run the `Release` workflow manually with the
-existing tag. The finalization job verifies:
+After the package is public, dispatch the `Release` workflow again with
+`phase: finalize` and the existing tag. The `finalize` job verifies:
 
 - npm integrity against a fresh local pack
 - npm `gitHead` against the tagged commit
